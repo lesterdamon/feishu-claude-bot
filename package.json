@@ -11,6 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.65.0",
     "axios": "^1.16.1",
     "crypto": "^1.0.1",
     "dotenv": "^17.4.2",

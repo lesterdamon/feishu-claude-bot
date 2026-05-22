@@ -8,6 +8,12 @@ const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET
 const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY
 const ZHIPU_MODEL = process.env.ZHIPU_MODEL || 'glm-4-flash'
 
+console.log('环境变量检查:', {
+  hasAppId: !!FEISHU_APP_ID,
+  hasAppSecret: !!FEISHU_APP_SECRET,
+  hasZhipuKey: !!ZHIPU_API_KEY
+})
+
 // 飞书访问令牌缓存
 let accessToken = null
 let tokenExpireTime = 0
@@ -79,58 +85,72 @@ async function askZhipu(message, conversationHistory = []) {
 const conversationHistories = new Map()
 
 export default async function handler(req, res) {
-  // 只接受 POST 请求
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-
-  const body = req.body
-
-  // 处理 URL 验证
-  if (body.type === 'url_verification') {
-    return res.json({ challenge: body.challenge })
-  }
-
-  // 处理消息事件
-  if (body.header?.event_type === 'im.message.receive_v1') {
-    const event = body.event
-    const message = event.message
-
-    // 忽略机器人自己发送的消息
-    if (message.sender_id.type === 'app') {
-      return res.json({ code: 0, msg: 'success' })
+  try {
+    // 只接受 POST 请求
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    // 解析消息内容
-    let userMessage = ''
-    try {
-      const content = JSON.parse(message.content)
-      userMessage = content.text || ''
-    } catch (e) {
-      userMessage = message.content
+    const body = req.body
+    console.log('收到请求:', JSON.stringify(body).substring(0, 500))
+
+    // 处理 URL 验证
+    if (body.type === 'url_verification') {
+      console.log('URL 验证请求')
+      return res.json({ challenge: body.challenge })
     }
 
-    // 检查是否是群聊消息且被 @
-    const isGroupChat = message.chat_type === 'group'
-    if (isGroupChat) {
-      const mentions = message.mentions || []
-      const isMentioned = mentions.some(m => m.id === FEISHU_APP_ID || m.name?.includes('助手'))
-      if (!isMentioned && !userMessage.includes('@')) {
+    // 处理消息事件
+    if (body.header?.event_type === 'im.message.receive_v1') {
+      console.log('收到消息事件')
+      const event = body.event
+      const message = event?.message
+
+      if (!message) {
+        console.log('没有消息内容')
         return res.json({ code: 0, msg: 'success' })
       }
-      userMessage = userMessage.replace(/@[^\s]+\s?/g, '').trim()
-    }
 
-    if (!userMessage) {
-      return res.json({ code: 0, msg: 'success' })
-    }
+      // 忽略机器人自己发送的消息
+      if (message.sender_id?.type === 'app') {
+        console.log('忽略机器人自己的消息')
+        return res.json({ code: 0, msg: 'success' })
+      }
 
-    // 获取会话历史
-    const chatId = message.chat_id
-    let history = conversationHistories.get(chatId) || []
+      // 解析消息内容
+      let userMessage = ''
+      try {
+        const content = JSON.parse(message.content)
+        userMessage = content.text || ''
+      } catch (e) {
+        userMessage = message.content
+      }
 
-    // 异步处理回复
-    ; (async () => {
+      // 检查是否是群聊消息且被 @
+      const isGroupChat = message.chat_type === 'group'
+      if (isGroupChat) {
+        const mentions = message.mentions || []
+        const isMentioned = mentions.some(m => m.id === FEISHU_APP_ID || m.name?.includes('助手'))
+        if (!isMentioned && !userMessage.includes('@')) {
+          return res.json({ code: 0, msg: 'success' })
+        }
+        userMessage = userMessage.replace(/@[^\s]+\s?/g, '').trim()
+      }
+
+      if (!userMessage) {
+        return res.json({ code: 0, msg: 'success' })
+      }
+
+      console.log('用户消息:', userMessage)
+
+      // 获取会话历史
+      const chatId = message.chat_id
+      let history = conversationHistories.get(chatId) || []
+
+      // 先返回响应，再异步处理
+      res.json({ code: 0, msg: 'success' })
+
+      // 异步处理回复
       try {
         const reply = await askZhipu(userMessage, history)
 
@@ -142,14 +162,18 @@ export default async function handler(req, res) {
         conversationHistories.set(chatId, history)
 
         await sendFeishuMessage(message.chat_id, 'chat_id', reply)
+        console.log('已发送回复')
       } catch (error) {
         console.error('处理消息错误:', error.message)
         await sendFeishuMessage(message.chat_id, 'chat_id', '抱歉，处理您的请求时出错了：' + error.message)
       }
-    })()
 
-    return res.json({ code: 0, msg: 'success' })
+      return
+    }
+
+    res.json({ code: 0, msg: 'success' })
+  } catch (error) {
+    console.error('处理请求错误:', error)
+    res.status(500).json({ error: error.message })
   }
-
-  res.json({ code: 0, msg: 'success' })
 }
