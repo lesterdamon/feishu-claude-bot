@@ -105,7 +105,8 @@ app.post('/webhook', async (req, res) => {
     res.json({ code: 0, msg: 'ok' })
   } catch (error) {
     console.error('❌ 请求错误:', error.message)
-    res.status(500).json({ error: error.message })
+    console.error('堆栈:', error.stack)
+    res.status(500).json({ error: error.message, stack: error.stack })
   }
 })
 
