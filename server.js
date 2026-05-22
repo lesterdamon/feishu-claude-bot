@@ -123,3 +123,4 @@ app.listen(PORT, () => {
     ZHIPU_API_KEY: ZHIPU_API_KEY ? '✅' : '❌'
   })
 })
+// force rebuild
